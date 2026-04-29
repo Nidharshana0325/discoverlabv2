@@ -1,4 +1,5 @@
-export const config = { api: { bodyParser: true } }; // Vercel default, but explicit is safer
+export const config = { api: { bodyParser: true } };
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -18,5 +19,6 @@ export default async function handler(req, res) {
   });
 
   const data = await upstream.json();
-  res.status(200).json(data);
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  res.status(200).json({ text });
 }
