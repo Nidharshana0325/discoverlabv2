@@ -2667,14 +2667,8 @@ Respond ONLY as valid JSON in this exact format:
 }`;
 
   try {
-  const text
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(`API ${res.status}: ${errData?.error?.message || res.statusText}`);
-    }
-    const data = await res.json();
-    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    const clean = raw.replace(/```json|```/g, '').trim();
+    const text = await callAI(prompt);
+    const clean = text.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(clean);
     daReport = parsed;
     daReport.studentName = scientistName;
