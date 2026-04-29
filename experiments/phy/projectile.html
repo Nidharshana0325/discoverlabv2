@@ -2667,14 +2667,7 @@ Respond ONLY as valid JSON in this exact format:
 }`;
 
   try {
-    const res = await fetch(GEMINI_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: 1000 }
-      })
-    });
+  const text
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
       throw new Error(`API ${res.status}: ${errData?.error?.message || res.statusText}`);
