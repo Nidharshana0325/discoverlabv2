@@ -6,36 +6,30 @@ export default async function handler(req, res) {
   const { prompt } = req.body;
   if (!prompt) return res.status(400).json({ error: 'No prompt provided' });
 
-  const HF_TOKEN = process.env.HF_TOKEN;
+  const GEMINI_KEY = process.env.GEMINI_KEY;
 
   try {
     const response = await fetch(
-      'https://router.huggingface.co/v1/chat/completions',
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
       {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${HF_TOKEN}`
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'microsoft/Phi-4-mini-instruct:nebius', // ← provider suffix is required
-          messages: [{ role: 'user', content: prompt }],
-          max_tokens: 1000,
-          temperature: 0.7
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.7, maxOutputTokens: 1000 }
         })
       }
     );
 
-    // Log the raw text first to debug any future issues
     const rawText = await response.text();
 
     if (!response.ok) {
-      console.error('HF API error:', response.status, rawText);
-      return res.status(500).json({ text: `AI error ${response.status}: ${rawText.slice(0, 200)}` });
+      console.error('Gemini error:', response.status, rawText);
+      return res.status(500).json({ text: `AI error ${response.status}: ${rawText.slice(0, 300)}` });
     }
 
     const data = JSON.parse(rawText);
-    const raw = data?.choices?.[0]?.message?.content || '';
+    const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
     const clean = raw.replace(/```json|```/g, '').trim();
 
     res.status(200).json({ text: clean });
