@@ -475,19 +475,19 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
           <div class="sc-icon">⚛️</div>
           <div class="sc-name">PHYSICS</div>
           <div class="sc-desc">Motion, forces, energy &amp; oscillations</div>
-          <span class="sc-badge badge-live">9 Live · 10 Exps</span>
+          <span class="sc-badge badge-live">10 Live · 10 Exps</span>
         </div>
         <div class="sc sc-ch" onclick="showExps('chemistry')">
           <div class="sc-icon">🧪</div>
           <div class="sc-name">CHEMISTRY</div>
           <div class="sc-desc">Reactions, separation &amp; processes</div>
-          <span class="sc-badge badge-live">9 Live · 10 Exps</span>
+          <span class="sc-badge badge-live">10 Live · 10 Exps</span>
         </div>
         <div class="sc sc-bi" onclick="showExps('biology')">
           <div class="sc-icon">🧬</div>
           <div class="sc-name">BIOLOGY</div>
           <div class="sc-desc">Life processes &amp; living systems</div>
-          <span class="sc-badge badge-live">9 Live · 10 Exps</span>
+          <span class="sc-badge badge-live">10 Live · 10 Exps</span>
         </div>
         <div class="sc sc-ma locked">
           <div class="sc-icon">📐</div>
@@ -655,7 +655,12 @@ const SUBJECTS = {
       { icon:'🎧', name:'Wave Behaviour', cls:'ei-ph',
         desc:'Combine waves to observe interference and superposition. AI vs wave equation. Real-world: noise-canceling headphones.',
         tags:['Resultant Amplitude','Frequency (Hz)','Interference','Wave Superposition'],
-        live:true, url:'experiments/phy/wave.html' }
+        live:true, url:'experiments/phy/wave.html' },
+
+      { icon:'🔍', name:'Lens Imaging', cls:'ei-ph',
+        desc:'Study image formation using lenses. AI vs lens formula. Real-world: cameras and microscopes.',
+        tags:['Focal Length','Image Distance','Lens Formula','Optics AI'],
+        live:true, url:'experiments/phy/lenses.html' }
     ]
   },
   chemistry:{
@@ -697,7 +702,13 @@ const SUBJECTS = {
       { icon:'🧊', name:'States of Matter', cls:'ei-ch',
         desc:'Observe phase transitions and heating/cooling curves. AI vs thermodynamic model. Real-world: freeze-drying food.',
         tags:['Temperature (°C)','Heat Added (J)','Phase Transitions','Thermodynamics AI'],
-        live:true, url:'experiments/chem/states.html' }
+        live:true, url:'experiments/chem/states.html' },
+
+      { icon:'💧', name:'Water Filtration', cls:'ei-ch',
+        desc:'Simulate water purification and turbidity removal. AI vs filtration model. Real-world: drinking water treatment.',
+        tags:['Turbidity (NTU)','Filtration Stages','Water Treatment','AI Prediction'],
+        live:true, url:'experiments/chem/waterfilter.html' }
+    
     ]
   },
   biology:{
@@ -735,7 +746,12 @@ const SUBJECTS = {
       { icon:'🧠', name:'Learning Neuron', cls:'ei-bi',
         desc:'Simulate how a neuron learns and strengthens connections over time. AI vs Hebbian learning. Real-world: how studying forms memory.',
         tags:['Synapse Strength','Learning Rate','Neural Plasticity','Hebbian AI'],
-        live:true, url:'experiments/bio/learningneuron.html' }
+        live:true, url:'experiments/bio/learningneuron.html' },
+
+      { icon:'🍅', name:'Tomato Growth', cls:'ei-bi',
+        desc:'Observe plant growth under different conditions. AI vs growth trends. Real-world: agriculture optimization.',
+        tags:['Growth Rate','Sunlight','Water Intake','Plant Biology AI'],
+        live:true, url:'experiments/bio/tomato.html' }
     ]
   }
 };
