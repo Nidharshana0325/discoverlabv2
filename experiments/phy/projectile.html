@@ -1763,23 +1763,47 @@ function genDataset(n){
   const pts=[];
   for(let i=0;i<n;i++){
     const v={};
-    PARAMS.forEach(p=>{v[p.symbol]=p.min+(Math.random()*(p.max-p.min));});
-    v.θ=5+Math.random()*80;v.v0=5+Math.random()*45;v.g=1+Math.random()*25;
-    v.h0=Math.random()*8;v.m=0.1+Math.random()*2;v.Cd=Math.random()*0.8;
-    v.ρ=0.9+Math.random()*0.6;v.A=0.005+Math.random()*0.06;v.ω=Math.random()*1000;v.vw=(Math.random()-.5)*10;
-    pts.push({values:v,range:computeRange(v,true),maxH:computeMaxHeight(v),user:false});
+    PARAMS.forEach(p=>{v[p.symbol]=p.default;});
+    // Better sampling: stratified over key physics variables
+    v.θ=5+Math.random()*80;
+    v.v0=3+Math.random()*47;
+    v.g=1.62+Math.random()*23; // Moon to heavy planet
+    v.h0=Math.random()*8;
+    v.m=0.1+Math.random()*2;
+    v.Cd=Math.random()*0.7;
+    v.ρ=0.9+Math.random()*0.6;
+    v.A=0.005+Math.random()*0.06;
+    v.ω=Math.random()*1000;
+    v.vw=(Math.random()-.5)*10;
+    pts.push({values:v,range:computeRange(v,false),maxH:computeMaxHeight(v),user:false});
   }
   return pts;
 }
 function preload(){
   dataPoints=[];
-  dataPoints.push(...genDataset(1200));
-  // 100 sweeping angle (most important factor)
-  for(let i=0;i<100;i++){const v={};PARAMS.forEach(p=>{v[p.symbol]=p.default;});v.θ=5+Math.random()*80;dataPoints.push({values:v,range:computeRange(v,true),maxH:computeMaxHeight(v),user:false});}
-  // 100 sweeping speed (most important factor)
-  for(let i=0;i<100;i++){const v={};PARAMS.forEach(p=>{v[p.symbol]=p.default;});v.v0=3+Math.random()*47;dataPoints.push({values:v,range:computeRange(v,true),maxH:computeMaxHeight(v),user:false});}
-  // 100 sweeping gravity
-  for(let i=0;i<100;i++){const v={};PARAMS.forEach(p=>{v[p.symbol]=p.default;});v.g=1.62+Math.random()*18;dataPoints.push({values:v,range:computeRange(v,true),maxH:computeMaxHeight(v),user:false});}
+  dataPoints.push(...genDataset(1500));
+  // Dense grid sweep over angle — most critical variable
+  for(let θ=5;θ<=85;θ+=2){
+    const v={};PARAMS.forEach(p=>{v[p.symbol]=p.default;});v.θ=θ;
+    dataPoints.push({values:{...v},range:computeRange(v,false),maxH:computeMaxHeight(v),user:false});
+    // Also vary v0
+    [10,15,20,25,30,40].forEach(v0=>{
+      const vv={...v,v0};
+      dataPoints.push({values:vv,range:computeRange(vv,false),maxH:computeMaxHeight(vv),user:false});
+    });
+  }
+  // Grid sweep over speed
+  for(let v0=3;v0<=50;v0+=2){
+    const v={};PARAMS.forEach(p=>{v[p.symbol]=p.default;});v.v0=v0;
+    dataPoints.push({values:{...v},range:computeRange(v,false),maxH:computeMaxHeight(v),user:false});
+  }
+  // Grid sweep over gravity
+  [1.62,3.72,9.81,11,15,24.8].forEach(g=>{
+    for(let θ=10;θ<=80;θ+=10){
+      const v={};PARAMS.forEach(p=>{v[p.symbol]=p.default;});v.g=g;v.θ=θ;
+      dataPoints.push({values:{...v},range:computeRange(v,false),maxH:computeMaxHeight(v),user:false});
+    }
+  });
 }
 function addDataPoint(){
   const v={};PARAMS.forEach(p=>{v[p.symbol]=currentParams[p.symbol]||p.default;});
@@ -1880,6 +1904,8 @@ function finishTraining(){
   document.getElementById('trainNextBtnNav').disabled=false;
   const vomb=document.getElementById('viewOMBtn');if(vomb)vomb.disabled=false;
   document.getElementById('guessSubmitBtn').disabled=guessSlots.some(s=>s===null);
+  _trainedCoeffs=null; // reset so mlPredict retrains on current dataPoints
+  trainRealModel();
   playChime();
 }
 
@@ -2086,16 +2112,87 @@ function runAISim(){
   aiRangeVal=R;
   document.getElementById('aiRange').textContent=R.toFixed(2);
   document.getElementById('cmpAI').textContent=R.toFixed(2)+'m';
-  animProjectile('simAICanvas',simParams,'#00e096','aiGoalFlash',null);
+  animProjectile('simAICanvas',simParams,'#00e096','aiGoalFlash',R);
   if(!simUnlocked.med)unlockSimGroup('med');
   else if(!simUnlocked.low)unlockSimGroup('low');
 }
 
 
+// Real regression models trained on dataPoints
+let _trainedCoeffs=null;
+
+function trainRealModel(){
+  if(!dataPoints||dataPoints.length<10)return;
+  const type=trainedModel?trainedModel.type:'polynomial';
+
+  // Build feature matrix from dataPoints
+  // Features: sin(2θ), v0², 1/g, h0, v0²*sin(2θ)/g (physics-informed)
+  const X=[],Y=[];
+  dataPoints.forEach(dp=>{
+    const v=dp.values;
+    const θ=(v.θ||45)*Math.PI/180,v0=v.v0||20,g=v.g||9.81,h0=v.h0||0;
+    const s2t=Math.sin(2*θ),v0sq=v0*v0,invG=1/g;
+    const physics=v0sq*s2t*invG; // textbook term
+    if(type==='linear'){
+      X.push([1, v0sq*s2t, invG, h0, v0sq]);
+    } else if(type==='polynomial'){
+      X.push([1, physics, physics*physics*0.001, h0, v0sq*invG*0.01, s2t]);
+    } else {
+      // neural: more features
+      X.push([1, physics, h0, v0sq, s2t, invG, Math.cos(θ)*Math.cos(θ), v0sq*h0*0.01]);
+    }
+    Y.push(dp.range);
+  });
+
+  // Least squares via normal equations: coeffs = (X'X)^-1 X'Y
+  const n=X.length,m=X[0].length;
+  // X'X
+  const XtX=Array.from({length:m},()=>new Array(m).fill(0));
+  const XtY=new Array(m).fill(0);
+  for(let i=0;i<n;i++){
+    for(let j=0;j<m;j++){
+      XtY[j]+=X[i][j]*Y[i];
+      for(let k=0;k<m;k++) XtX[j][k]+=X[i][j]*X[i][k];
+    }
+  }
+  // Ridge regularization (λ=0.001) for stability
+  for(let j=0;j<m;j++) XtX[j][j]+=0.001;
+  // Gaussian elimination to solve XtX * coeffs = XtY
+  const aug=XtX.map((row,i)=>[...row,XtY[i]]);
+  for(let col=0;col<m;col++){
+    let maxR=col;
+    for(let r=col+1;r<m;r++) if(Math.abs(aug[r][col])>Math.abs(aug[maxR][col])) maxR=r;
+    [aug[col],aug[maxR]]=[aug[maxR],aug[col]];
+    const piv=aug[col][col];if(Math.abs(piv)<1e-12) continue;
+    for(let r=0;r<m;r++){
+      if(r===col) continue;
+      const f=aug[r][col]/piv;
+      for(let c=col;c<=m;c++) aug[r][c]-=f*aug[col][c];
+    }
+  }
+  const coeffs=aug.map((row,i)=>row[m]/row[i]);
+  _trainedCoeffs={coeffs,type};
+}
+
 function mlPredict(v){
-  let R=computeRange(v,false);
-  const noise=trainedModel.type==='linear'?0.08:trainedModel.type==='polynomial'?0.015:0.025;
-  R*=(1+(Math.random()-.5)*noise);
+  // Train on first call if not done
+  if(!_trainedCoeffs) trainRealModel();
+  if(!_trainedCoeffs) return computeRange(v,false);
+
+  const θ=(v.θ||45)*Math.PI/180,v0=v.v0||20,g=v.g||9.81,h0=v.h0||0;
+  const s2t=Math.sin(2*θ),v0sq=v0*v0,invG=1/g;
+  const physics=v0sq*s2t*invG;
+  const {coeffs,type}=_trainedCoeffs;
+  let features;
+  if(type==='linear'){
+    features=[1, v0sq*s2t, invG, h0, v0sq];
+  } else if(type==='polynomial'){
+    features=[1, physics, physics*physics*0.001, h0, v0sq*invG*0.01, s2t];
+  } else {
+    features=[1, physics, h0, v0sq, s2t, invG, Math.cos(θ)*Math.cos(θ), v0sq*h0*0.01];
+  }
+  let R=0;
+  features.forEach((f,i)=>{ R+=f*(coeffs[i]||0); });
   return Math.max(0,R);
 }
 
@@ -2128,7 +2225,7 @@ function runTBSim(){
   // Pass actual user params BUT with Cd=0, vw=0 (textbook = no drag, no wind)
   const tbParams={θ:_tbA,v0:_tbV,g:_tbG,h0,Cd:0,ρ:simParams.ρ||1.2,A:simParams.A||0.038,m:simParams.m||0.43,ω:0,vw:0};
   const _R=tbRangeVal;
-  animProjectile('simTBCanvas',{θ:_tbA,v0:_tbV,g:_tbG,h0:0,Cd:0,ρ:1.2,A:0.038,m:0.43,ω:0,vw:0},'#f5a623','tbGoalFlash',null);
+  animProjectile('simTBCanvas',{θ:_tbA,v0:_tbV,g:_tbG,h0:0,Cd:0,ρ:1.2,A:0.038,m:0.43,ω:0,vw:0},'#f5a623','tbGoalFlash',R);
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2221,19 +2318,26 @@ function animProjectile(id,params,color,flashId,predictedR){
   const ctx=cv.getContext('2d'),W=cv.width,H=cv.height;
   if(simAnimIds[id])cancelAnimationFrame(simAnimIds[id]);
 
-  // Physics from params
+  // Physics from params — used for arc shape only
   const θ=(params.θ||45)*Math.PI/180,v0=params.v0||20,g=params.g||9.81,h0=params.h0||0;
   const vx=v0*Math.cos(θ),vy=v0*Math.sin(θ);
   const disc=vy*vy+2*g*h0;
   const totalT=(vy+Math.sqrt(Math.max(0,disc)))/g;
-  const range=vx*totalT; // true physics landing distance
+  const trueRange=vx*totalT; // true physics landing — only for scale reference
 
-  // goalR = where AI/formula says ball lands → goalpost sits here
-  // goalR = FIXED canonical target (45°, 20 m/s, Earth) — goalpost never moves
+  // 'range' = where ball actually lands in this simulation:
+  // AI sim passes predictedR (AI model output); TB sim passes textbook R.
+  // If predictedR null (shouldn't happen), fall back to true physics.
+  const range=(predictedR&&predictedR>0)?predictedR:trueRange;
+
+  // Scale vx so ball lands at 'range' in time totalT (same arc shape, stretched/compressed)
+  const scaledVx=range/totalT;
+
+  // goalR = FIXED goalpost distance (canonical 45°, 20m/s, Earth = ~40.77m)
+  // Post never moves. Goal = predicted/calculated range lands at/inside the post.
   const CANONICAL_G=9.81,CANONICAL_V=20,CANONICAL_THETA=45*Math.PI/180;
   const _cvy=CANONICAL_V*Math.sin(CANONICAL_THETA),_cvx=CANONICAL_V*Math.cos(CANONICAL_THETA);
-  const _cdisc=_cvy*_cvy; // h0=0 canonical
-  const _cT=(_cvy+Math.sqrt(_cdisc))/CANONICAL_G;
+  const _cT=(_cvy+Math.sqrt(_cvy*_cvy))/CANONICAL_G;
   const goalR=_cvx*_cT; // ≈ 40.77 m, always fixed
 
   const KICK_DUR=0.9;
@@ -2295,7 +2399,7 @@ function animProjectile(id,params,color,flashId,predictedR){
     ctx.beginPath();
     for(let i=0;i<=60;i++){
       const t=(i/60)*totalT;
-      const bx=padL+vx*t*scale;
+      const bx=padL+scaledVx*t*scale;
       const by=groundY-((h0+vy*t-0.5*g*t*t)*scale);
       i===0?ctx.moveTo(bx,by):ctx.lineTo(bx,by);
     }
@@ -2327,7 +2431,7 @@ function animProjectile(id,params,color,flashId,predictedR){
     } else {
       const bt=elapsed-KICK_DUR;
       if(bt<=totalT){
-        const bx=padL+vx*bt*scale;
+        const bx=padL+scaledVx*bt*scale;
         const by=groundY-((h0+vy*bt-0.5*g*bt*bt)*scale);
         trail.push({x:bx,y:by,t:now});
 
@@ -2355,27 +2459,57 @@ function animProjectile(id,params,color,flashId,predictedR){
         for(let i=0;i<5;i++){const a=spin+i*1.257;ctx.beginPath();ctx.arc(bx+5*Math.cos(a),by+5*Math.sin(a),1.8,0,Math.PI*2);ctx.fill();}
 
         // Velocity arrow
-        const vang=Math.atan2(-(vy-g*bt),vx);
-        const arrLen=Math.min(36,Math.sqrt(vx*vx+(vy-g*bt)**2)*1.4);
+        const vang=Math.atan2(-(vy-g*bt),scaledVx);
+        const arrLen=Math.min(36,Math.sqrt(scaledVx*scaledVx+(vy-g*bt)**2)*1.4);
         ctx.strokeStyle=color+'cc';ctx.lineWidth=1.5;ctx.setLineDash([2,2]);
         ctx.beginPath();ctx.moveTo(bx,by);ctx.lineTo(bx+Math.cos(vang)*arrLen,by+Math.sin(vang)*arrLen);
         ctx.stroke();ctx.setLineDash([]);
 
-        // Goal check: ball lands within goalpost width (range ≈ goalR, post is fixed)
+        // Goal check: ball's true landing (range) vs fixed goalpost (goalR)
         if(!goalShown&&bt>=totalT*0.98){
           const landX=padL+range*scale;
-          if(landX>=gpLeft-4&&landX<=gpRight+4){
-            goalShown=true;playGoal();
+          goalShown=true;
+          if(landX>=gpLeft-8&&landX<=gpRight+8){
+            // GOAL — ball landed in the post
+            playGoal();
             const flashEl=document.getElementById(flashId);
             if(flashEl){flashEl.classList.add('show');setTimeout(()=>flashEl.classList.remove('show'),2500);}
             if(!confettiDone){confettiDone=true;launchConfetti(cv);}
+          } else {
+            // No goal — show short/overshoot label on canvas
+            const msg=landX<gpLeft?'⚠ Short — didn\'t reach the post':'⚠ Overshoot — past the post';
+            const msgColor=landX<gpLeft?'#f5a623':'#f05454';
+            setTimeout(()=>{
+              const flashEl=document.getElementById(flashId);
+              // Show a brief miss overlay if element exists (reuse flash el for miss)
+              // Draw miss label directly on canvas
+              ctx.fillStyle='rgba(0,0,0,.7)';ctx.fillRect(W/2-110,H/2-22,220,38);
+              ctx.strokeStyle=msgColor;ctx.lineWidth=1.5;ctx.strokeRect(W/2-110,H/2-22,220,38);
+              ctx.fillStyle=msgColor;ctx.font='bold 13px Inter,sans-serif';ctx.textAlign='center';
+              ctx.fillText(msg,W/2,H/2+4);
+              ctx.textAlign='left';
+            },200);
           }
         }
       } else {
-        // Resting
+        // Resting — draw ball at true landing spot
         const bx=padL+range*scale,by=groundY-8;
         ctx.fillStyle=color;ctx.beginPath();ctx.arc(bx,by,8,0,Math.PI*2);ctx.fill();
         ctx.strokeStyle='rgba(0,0,0,.4)';ctx.lineWidth=1;ctx.stroke();
+        // Draw a small ground marker showing landing vs post
+        const isGoal=(bx>=gpLeft-8&&bx<=gpRight+8);
+        if(!isGoal){
+          // Arrow/line from ball to post
+          ctx.strokeStyle='rgba(255,200,50,.5)';ctx.lineWidth=1.2;ctx.setLineDash([3,3]);
+          ctx.beginPath();ctx.moveTo(bx,groundY-2);ctx.lineTo(gpLeft,groundY-2);ctx.stroke();
+          ctx.setLineDash([]);
+          // Distance diff label
+          const diff=(goalR-range).toFixed(1);
+          const lbl=range<goalR?`${diff}m short`:`${Math.abs(diff)}m past`;
+          ctx.fillStyle='rgba(255,200,50,.85)';ctx.font='bold 9px JetBrains Mono,monospace';ctx.textAlign='center';
+          ctx.fillText(lbl,(bx+gpLeft)/2,groundY-6);
+          ctx.textAlign='left';
+        }
         confettiDone=false;
       }
       simAnimIds[id]=requestAnimationFrame(frame);
